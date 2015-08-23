@@ -1,0 +1,100 @@
+---
+title: "Machine Learning Project"
+author: "rick adkins"
+date: "Saturday, August 22, 2015"
+output: html_document
+---
+#Machine Learning
+Machine learning is the technique of examining one set of data to "learn", looking at how the variables work together to produce a predictable outcome.  Then, the lessons learned are applied to another set of data, predicting the outcome.
+
+We will use the Random Forest algorithim to build our model.  This is called training the model.  
+
+In order to examine the accuracy of the trained model, we will need another set of data to examine.  We will randomly set aside 30% of the original data set and use it to test the model.
+
+When we are happy with the model, we will apply it to another independent data set and report the outcome.
+
+```{r, results='hide'}
+library(caret)
+library(kernlab)
+library(rpart)
+library(rpart.plot)
+```
+#Load the training data
+The data used to train the model is located in "pml-training.csv".  We load it into the trainingDataRaw variable.  
+
+The data used to test our model is located in "pml-testing.csv".  We load it into the testDataRaw variable.
+
+We will convert the classe column to a factor.
+
+```{r trainTheModel}
+trainingDataRaw<-read.csv("pml-training.csv", header=T, as.is=T, stringsAsFactors=F, na.strings=c('NA','','#DIV/0!'))
+trainingDataRaw$classe<- as.factor(trainingDataRaw$classe)
+testDataRaw<-read.csv("pml-testing.csv", header=T, as.is=T, stringsAsFactors=F, na.strings=c('NA','','#DIV/0!'))
+```
+
+###Remove the columns not needed.
+The data sets contain variables that are insignificant or don't contribute to predicting the outcome.  We will remove these columns from the data set.  When we are finished, we will need to put the classe column back into the training data set.
+
+```{r}
+trainingDataRaw<-trainingDataRaw[,colSums(is.na(trainingDataRaw))==0]
+
+testDataRaw<-testDataRaw[,colSums(is.na(testDataRaw))==0]
+
+NAs<-apply(trainingDataRaw,2,function(x){sum(is.na(x))})
+trainingData<-trainingDataRaw[,which(NAs==0)]
+
+NAs<-apply(testDataRaw,2,function(x){sum(is.na(x))==0})
+testData<-testDataRaw[,which(NAs!=0)]
+
+numCols<-which(lapply(trainingData,class) %in% "numeric")
+trainingData<-trainingData[,numCols]
+trainingData$classe=trainingDataRaw$classe
+```
+
+#Create the cross validation trainset
+```{r}
+set.seed(27594)
+cvTrain<-createDataPartition(trainingData$classe, p=.7, list=F)
+trainTrainingData<-trainingData[cvTrain,]
+cvTrainingData<-trainingData[-cvTrain,]
+```
+
+#Train the model using Random Forest.  
+###Random Forest has a high accuracy rate.
+```{r,results='hide'}
+fitModel<- train(classe~., method="rf", data=trainTrainingData, 
+                 trControl=trainControl(method='cv',5), ntree=250)
+```
+```{r}
+fitModel
+```
+
+#Test the model against the cross validation dataset
+```{r predictCrossValidationToModel}
+predictCrossValidation<-predict(fitModel, cvTrainingData)
+cmCVTraining<-confusionMatrix(cvTrainingData$classe, predictCrossValidation)
+```
+
+```{r calculateAccuracy}
+cmCVTraining$overall[1]
+#Out-of-sample error:
+ose<-(1-cmCVTraining$overall[1])
+names(ose)<-"Out of Sample Error"
+ose
+```
+
+
+#Predicting against Test Data Set
+```{r}
+answers<-predict(fitModel,testData)
+#The predictions are:
+answers
+```
+
+#Figures
+See the article: Draw nicer Classification and Regression Trees with the rpart.plot package found at http://www.r-bloggers.com/draw-nicer-classification-and-regression-trees-with-the-rpart-plot-package/   for more information about the prp function.
+
+```{r}
+treeView<-rpart(classe~., data=trainTrainingData, method="class")
+prp(treeView)
+```
